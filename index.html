@@ -409,7 +409,9 @@ function inferCategoryFromName(name) {
 /* ──────────── 数据 ──────────── */
 // 隐私：不在浏览器中保存任何用户使用数据，无 localStorage / sessionStorage
 let items = [];
+let scannedFolders = []; // 扫描结果暂存
 
+/* 快速模板数据 */
 const TEMPLATES = {
   '202603': [
     "中山-佛山-深圳高速通行费240.35","中山-佛山高速通行费45.6",
@@ -422,9 +424,6 @@ const TEMPLATES = {
     "中山-佛山高速通行费51.92","中山-江门高速通行费30.95","公车加油费用200",
   ],
 };
-
-let items = [];
-let scannedFolders = []; // 扫描结果暂存
 
 /* ──────────── 初始化 ──────────── */
 document.addEventListener('DOMContentLoaded', () => {
