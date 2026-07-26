@@ -200,12 +200,49 @@ td input:focus { background: #e6f7ff; border-radius: 4px; }
 
   <!-- ── 标签页 ── -->
   <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('folder')">📂 文件夹导入</button>
+    <button class="tab-btn active" onclick="switchTab('guide')">📖 工具使用说明</button>
+    <button class="tab-btn" onclick="switchTab('folder')">📂 文件夹导入</button>
     <button class="tab-btn" onclick="switchTab('manual')">✏️ 编辑确认</button>
   </div>
 
+  <!-- ═══════════════ 标签0: 工具使用说明 ═══════════════ -->
+  <div id="tab-guide" class="tab-panel active">
+    <div class="card" style="line-height:1.8;">
+      <div class="card-title">📖 工具使用说明</div>
+      <div style="font-size:14px;color:var(--text);">
+
+        <p style="font-weight:600;font-size:15px;margin:16px 0 8px;">功能说明</p>
+        <p style="padding-left:16px;border-left:3px solid var(--primary);background:var(--primary-l);padding:12px 16px;border-radius:6px;margin-bottom:16px;">
+          本工具支持上传票据文件或文件夹，自动识别并提取金额信息，一键生成 Excel 明细表。支持单文件金额提取与批量合并计算，快速完成票据数据整理。
+        </p>
+
+        <p style="font-weight:600;font-size:15px;margin:16px 0 8px;">使用步骤</p>
+
+        <div style="display:flex;flex-direction:column;gap:12px;">
+          <div style="display:flex;align-items:flex-start;gap:12px;background:#f9f9f9;padding:12px 16px;border-radius:8px;">
+            <span style="background:var(--primary);color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;">1</span>
+            <div><strong>上传文件</strong><br/><span style="color:var(--text-sub);font-size:13px;">将文件或文件夹拖拽至上传区域，或点击选择文件后点击"上传"按钮。</span></div>
+          </div>
+          <div style="display:flex;align-items:flex-start;gap:12px;background:#f9f9f9;padding:12px 16px;border-radius:8px;">
+            <span style="background:var(--primary);color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;">2</span>
+            <div><strong>解析数据</strong><br/><span style="color:var(--text-sub);font-size:13px;">等待系统自动扫描解析完成，点击"导入到表格"按钮。</span></div>
+          </div>
+          <div style="display:flex;align-items:flex-start;gap:12px;background:#f9f9f9;padding:12px 16px;border-radius:8px;">
+            <span style="background:var(--primary);color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;">3</span>
+            <div><strong>核对确认</strong><br/><span style="color:var(--text-sub);font-size:13px;">进入编辑确认页面，可查看、核对并修改识别数据。</span></div>
+          </div>
+          <div style="display:flex;align-items:flex-start;gap:12px;background:#f9f9f9;padding:12px 16px;border-radius:8px;">
+            <span style="background:var(--primary);color:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0;">4</span>
+            <div><strong>导出结果</strong><br/><span style="color:var(--text-sub);font-size:13px;">确认无误后，点击"下载 EXCEL"按钮，保存至指定路径。</span></div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
   <!-- ═══════════════ 标签1: 文件夹导入 ═══════════════ -->
-  <div id="tab-folder" class="tab-panel active">
+  <div id="tab-folder" class="tab-panel">
 
     <!-- 拖拽/选择区 -->
     <div class="card">
@@ -378,7 +415,7 @@ function switchTab(name) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   const btn = [...document.querySelectorAll('.tab-btn')].find(
-    b => b.textContent.includes(name === 'folder' ? '文件夹' : '编辑')
+    b => b.textContent.includes(name === 'guide' ? '说明' : name === 'folder' ? '文件夹' : '编辑')
   );
   if (btn) btn.classList.add('active');
   document.getElementById(`tab-${name}`).classList.add('active');
