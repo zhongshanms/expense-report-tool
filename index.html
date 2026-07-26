@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>费用报销Excel生成器</title>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script>
+// pdf.js Worker + 字体配置（缺少 CMap 将导致中文 PDF 金额提取为空）
+if (typeof pdfjsLib !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  pdfjsLib.GlobalWorkerOptions.cMapUrl =
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/';
+  pdfjsLib.GlobalWorkerOptions.standardFontDataUrl =
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/standard_fonts/';
+}
+</script>
+
+<style>
+:root {
+  --bg: #f0f2f5; --card-bg: #ffffff; --text: #1a1a2e;
+  --text-sub: #666; --border: #e8e8e8; --primary: #1890ff;
+  --primary-h: #40a9ff; --primary-l: #e6f7ff; --success: #52c41a;
+  --warning: #faad14; --danger: #ff4d4f; --table-hdr: #fafafa;
+  --radius: 8px; --shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: "Microsoft YaHei","微软雅黑",-apple-system,sans-serif;
+  background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.6;
+}
+
+/* Header */
+.app-header {
+  background: #fff; border-bottom: 1px solid var(--border);
+  padding: 12px 24px; display: flex; align-items: center;
+  justify-content: space-between; box-shadow: var(--shadow);
+  position: sticky; top: 0; z-index: 100;
+}
+.app-header .logo { font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.app-header .logo span { color: var(--primary); }
+.app-header .actions { display:flex; gap: 10px; align-items: center; }
+.header-total { font-size:13px; color:var(--text-sub); font-weight:500; }
+
+.container { max-width: 1200px; margin: 0 auto; padding: 20px 24px; }
+
+/* Card */
+.card {
+  background: var(--card-bg); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 20px 24px; margin-bottom: 16px;
+}
+.card-title { font-size: 15px; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 20px; border-radius: 6px; border: none;
+  font-size: 14px; font-family: inherit; cursor: pointer;
+  transition: all 0.2s; font-weight: 500;
+}
+.btn-primary  { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-h); }
+.btn-success  { background: var(--success); color: #fff; }
+.btn-success:hover { opacity: 0.85; }
+.btn-outline  { background: #fff; color: var(--text); border: 1px solid var(--border); }
+.btn-outline:hover { border-color: var(--primary); color: var(--primary); }
+.btn-sm { padding: 5px 12px; font-size: 13px; }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-danger:hover { opacity: 0.85; }
+
+/* Tabs */
+.tabs {
+  display: flex; gap: 0; border-bottom: 2px solid var(--border);
+  margin-bottom: 16px;
+}
+.tab-btn {
+  padding: 10px 20px; border: none; background: transparent;
+  font-size: 14px; cursor: pointer; color: var(--text-sub);
+  font-family: inherit; transition: 0.2s;
+  border-bottom: 2px solid transparent; margin-bottom: -2px;
+}
+.tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ==================== 文件夹拖拽区 ==================== */
+.drop-zone {
+  border: 2px dashed #d0d0d0;
+  border-radius: var(--radius);
+  padding: 48px 24px;
+  text-align: center;
+  transition: all 0.3s;
+  cursor: pointer;
+  background: #fafbfc;
+}
+.drop-zone:hover,
+.drop-zone.dragover {
+  border-color: var(--primary);
+  background: var(--primary-l);
+  box-shadow: 0 0 0 4px rgba(24,144,255,0.1);
+}
+.drop-zone .drop-icon { font-size: 48px; margin-bottom: 12px; }
+.drop-zone .drop-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+.drop-zone .drop-hint { font-size: 13px; color: var(--text-sub); }
+.drop-zone.dragover .drop-title { color: var(--primary); }
+
+/* 扫描结果卡片 */
+.scan-result {
+  margin-top: 16px;
+  background: #f6ffed; border: 1px solid #b7eb8f;
+  border-radius: var(--radius); padding: 16px; display: none;
+}
+.scan-result h4 { margin-bottom: 8px; color: var(--success); }
+.scan-file-list {
+  max-height: 280px; overflow-y: auto; font-size: 13px;
+}
+.scan-file-list .dir-item { font-weight:600; margin-top:8px; color:var(--primary); }
+.scan-file-list .file-item {
+  padding: 2px 0 2px 20px; color: var(--text-sub);
+  display: flex; justify-content: space-between;
+}
+.scan-file-list .file-item .amt { font-weight: 500; color: var(--text); }
+
+/* 错误提示 */
+.scan-error { color:var(--danger); font-size:13px; margin-top:8px; display:none; }
+
+/* ==================== 手动编辑表格 ==================== */
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 9px 7px; text-align: center; border: 1px solid #d0d0d0; white-space: nowrap; }
+th { background: var(--table-hdr); font-weight: 600; font-size: 13px; position: sticky; top: 0; }
+td input {
+  width: 100%; min-width: 50px; border: none; outline: none;
+  padding: 4px 6px; font-size: 13px; font-family: inherit;
+  text-align: center; background: transparent;
+}
+td input:focus { background: #e6f7ff; border-radius: 4px; }
+.col-seq{width:55px}.col-dept{width:110px}.col-obj2{width:130px}
+.col-obj3{width:140px}.col-cat{width:90px}.col-amt{width:85px}
+.col-desc{min-width:200px}.col-act{width:60px}
+.total-row td { font-weight: 700; background: #fafafa; }
+
+/* ==================== 批量导入 ==================== */
+.form-group { display:flex; flex-direction:column; gap:4px; margin-bottom: 10px; }
+.form-group label { font-size:13px; font-weight:600; color:var(--text-sub); }
+.form-group textarea {
+  padding: 8px 12px; border: 1px solid var(--border);
+  border-radius: 6px; font-size: 14px; font-family: inherit;
+  transition: border 0.2s; outline: none; resize: vertical; min-height: 120px;
+}
+.form-group textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(24,144,255,0.15); }
+
+.parse-preview {
+  background: #f9f9f9; border: 1px solid var(--border);
+  border-radius: 6px; padding: 12px; margin-top: 8px;
+  font-size: 13px; max-height: 200px; overflow-y: auto; display: none;
+}
+
+.hint { font-size: 12px; color: #999; margin-top: 4px; }
+
+/* ==================== Toast ==================== */
+.toast {
+  position: fixed; top: 20px; right: 20px;
+  background: var(--success); color: #fff;
+  padding: 12px 20px; border-radius: 8px;
+  font-size: 14px; z-index: 999;
+  animation: slideIn 0.3s ease;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+.toast.error { background: var(--danger); }
+@keyframes slideIn {
+  from { transform: translateX(120%); opacity:0; }
+  to { transform: translateX(0); opacity:1; }
+}
+
+/* 加载动画 */
+.spinner {
+  display: inline-block; width: 16px; height: 16px;
+  border: 2px solid #ccc; border-top-color: var(--primary);
+  border-radius: 50%; animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .app-header { flex-direction: column; gap: 8px; }
+  .app-header .actions { flex-wrap: wrap; }
+  .drop-zone { padding: 32px 16px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ==================== Header ==================== -->
+<header class="app-header">
+  <div class="logo">
+    📊 <span>费用报销Excel生成器</span>
+    <span class="header-total" id="header-total"></span>
+  </div>
+  <div class="actions">
+    <button class="btn btn-outline btn-sm" onclick="addRow()">+ 添加行</button>
+    <button class="btn btn-outline btn-sm" onclick="clearAll()">清空</button>
+    <button class="btn btn-success" onclick="downloadExcel()">
+      ⬇ 下载 Excel
+    </button>
+  </div>
+</header>
+
+<!-- ==================== 主体 ==================== -->
+<div class="container">
+
+  <!-- ── 标签页 ── -->
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('folder')">📂 文件夹导入</button>
+    <button class="tab-btn" onclick="switchTab('manual')">✏️ 手动编辑</button>
+    <button class="tab-btn" onclick="switchTab('parse')">📋 文本粘贴</button>
+  </div>
+
+  <!-- ═══════════════ 标签1: 文件夹导入 ═══════════════ -->
+  <div id="tab-folder" class="tab-panel active">
+
+    <!-- 拖拽/选择区 -->
+    <div class="card">
+      <div class="card-title">📂 拖拽文件夹到这里，或点击选择</div>
+      <div class="drop-zone" id="dropZone"
+           onclick="document.getElementById('folderInput').click()"
+           ondragover="onDragOver(event)"
+           ondragleave="onDragLeave(event)"
+           ondrop="onDrop(event)">
+        <div class="drop-icon">📁</div>
+        <div class="drop-title">将文件夹拖拽到这里</div>
+        <div class="drop-hint">
+          支持完整文件夹结构（含子文件夹中的 PDF 发票）<br/>
+          或点击此区域手动选择文件夹
+        </div>
+        <div class="scan-error" id="scanError"></div>
+      </div>
+      <!-- 隐藏的文件夹选择器（webkitdirectory 让浏览器读取整个文件夹结构） -->
+      <input type="file" id="folderInput" webkitdirectory
+             style="display:none" onchange="onFolderSelected(event)"/>
+    </div>
+
+    <!-- 扫描结果 -->
+    <div class="card scan-result" id="scanResult">
+      <h4>✅ 扫描完成</h4>
+      <div class="scan-file-list" id="scanFileList"></div>
+      <div style="margin-top:14px; display:flex; gap:10px;">
+        <button class="btn btn-primary" onclick="applyScannedData()">
+          📥 导入到表格
+        </button>
+        <button class="btn btn-outline btn-sm" onclick="downloadExcel()">
+          ⬇ 直接下载 Excel
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ 标签2: 手动编辑 ═══════════════ -->
+  <div id="tab-manual" class="tab-panel">
+    <div class="card">
+      <div class="card-title">📝 费用明细表（可直接修改）</div>
+      <div class="table-wrap">
+        <table id="expense-table">
+          <thead>
+            <tr>
+              <th class="col-seq">★序号</th>
+              <th class="col-dept">费用承担部门</th>
+              <th class="col-obj2">二级对象（店铺）</th>
+              <th class="col-obj3">三级（asin或其他）</th>
+              <th class="col-cat">费用类别</th>
+              <th class="col-amt">金额</th>
+              <th class="col-desc">费用说明</th>
+              <th class="col-act"></th>
+            </tr>
+          </thead>
+          <tbody id="table-body"></tbody>
+          <tfoot id="table-foot"></tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ 标签3: 文本粘贴 ═══════════════ -->
+  <div id="tab-parse" class="tab-panel">
+    <div class="card">
+      <div class="card-title">📋 粘贴文件夹结构文本</div>
+      <div class="form-group">
+        <label>每行一个费用项目（可含文件夹名称或 PDF 文件名）</label>
+        <textarea id="parse-input" placeholder="粘贴示例：&#10;中山-佛山高速通行费45.6&#10;公车加油费用200&#10;中山-江门高速通行费30.95&#10;..." oninput="previewParse()"></textarea>
+      </div>
+      <div class="parse-preview" id="parse-preview"></div>
+      <div style="margin-top:10px; display:flex; gap:8px;">
+        <button class="btn btn-primary" onclick="parseAndImport()">📥 导入表格</button>
+        <button class="btn btn-outline" onclick="clearParse()">清空</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">⚡ 快速模板</div>
+      <p class="hint" style="margin-bottom:8px;">选择模板后点击「导入表格」</p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn btn-outline btn-sm" onclick="loadTemplate('202603')">202603中山（7条）</button>
+        <button class="btn btn-outline btn-sm" onclick="loadTemplate('202605')">202605中山（9条）</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ==================== Toast 容器 ==================== -->
+<div id="toast-container"></div>
+
+<!-- ==================== JS 逻辑 ==================== -->
+<script>
+/* ===========================================================
+   PDF 发票金额提取（pdf.js）
+   =========================================================== */
+const PDF_CATEGORY_RULES = [
+  [['通行费','高速','公路通行','经营租赁*通行费'], '汽车费用'],
+  [['成品油','汽油','柴油','加油','加油站','石油'], '汽车费用'],
+  [['停车'], '停车费'],
+  [['维修','保养'], '维修费'],
+  [['住宿','酒店','宾馆'], '住宿费'],
+  [['餐饮','餐费','吃饭','饭店'], '餐饮费'],
+];
+const PDF_DEFAULT_CAT = '汽车费用';
+let pdfParseProgress = null; // { total, done } 用于进度追踪
+
+/* 从 PDF File 对象提取 (金额, 类别, 全文) */
+async function extractFromPDF(file) {
+  if (typeof pdfjsLib === 'undefined') return { amount: null, category: PDF_DEFAULT_CAT, text: '' };
+  try {
+    const arrayBuf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({
+      data: arrayBuf,
+      // 必须传入 CMap 和标准字体 URL，否则中文 PDF 金额字段为空
+      cMapUrl: pdfjsLib.GlobalWorkerOptions.cMapUrl,
+      standardFontDataUrl: pdfjsLib.GlobalWorkerOptions.standardFontDataUrl,
+      cMapPacked: false,
+      useWorkerFetch: false,
+    }).promise;
+    let text = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      text += content.items.map(it => it.str).join(' ') + '\n';
+    }
+    // 提取金额
+    // 策略：首先尝试精确匹配「价税合计(小写)¥金额」模式
+    // 如果 CMap 字体加载失败导致中文缺失，则回退到「智能数字筛选」
+    let amount = null;
+    
+    // 第一轮：精确模式（要求中文关键文本存在）
+    const pats = [
+      /[（(]小写[）)]\s*[¥￥]\s*(\d+\.?\d{1,2})/,      // （小写）¥ 紧邻
+      /价税合计[（(]大写[）)].*?[（(]小写[）)]\s*[¥￥]?\s*(\d+\.?\d{1,2})/, // 价税合计（大写）...（小写）
+      /[（(]小写[）)]\s*(\d+\.?\d{1,2})/,             // （小写）无¥
+      /价税合计[\s\S]{1,60}?(\d+\.\d{1,2})/,          // 价税合计60字符内有小数点的数字
+    ];
+    for (const pat of pats) {
+      const m = text.match(pat);
+      if (m) { amount = parseFloat(m[1]); break; }
+    }
+    
+    // 第二轮：智能数字筛选 —— 当 CMap 字体加载失败时，从所有数字中选出最像「价税合计」的
+    if (amount === null || amount > 100000) {
+      const allNums = text.match(/\d+\.\d{1,2}/g) || [];   // 只取有 1-2 位小数的（过滤掉税号等长整数）
+      if (allNums.length > 0) {
+        // 取数值最大的（发票上价税合计通常最大），但不超过 10 万
+        const candidates = allNums.map(Number).filter(n => n > 0 && n < 100000);
+        if (candidates.length > 0) {
+          amount = Math.max(...candidates);
+        }
+      }
+    }
+    // 推断类别
+    let category = PDF_DEFAULT_CAT;
+    for (const [keywords, cat] of PDF_CATEGORY_RULES) {
+      if (keywords.some(kw => text.includes(kw))) { category = cat; break; }
+    }
+    return { amount, category, text };
+  } catch(e) {
+    return { amount: null, category: PDF_DEFAULT_CAT, text: '[解析失败] ' + e.message };
+  }
+}
+
+/* 从文件名提取金额（回退方案，取最后一个数字） */
+function extractFromName(name) {
+  const clean = name.replace(/\.pdf$/i, '').trim();
+  const nums = clean.match(/\d+(?:\.\d+)?/g);
+  return nums ? parseFloat(nums[nums.length - 1]) : 0;
+}
+
+/* 推断文件名对应的类别（回退方案） */
+function inferCategoryFromName(name) {
+  for (const [keywords, cat] of PDF_CATEGORY_RULES) {
+    if (keywords.some(kw => name.includes(kw))) return cat;
+  }
+  return PDF_DEFAULT_CAT;
+}
+
+/* ──────────── 数据 & 默认值 ──────────── */
+const DEFAULT_ITEMS = [
+  { 部门:'质量部',二级对象:'质量部',三级:'质量部',费用类别:'汽车费用',金额:45.6,   费用说明:'中山-佛山高速通行费45.6' },
+  { 部门:'产品质量',二级对象:'产品质量',三级:'产品质量',费用类别:'汽车费用',金额:240.35, 费用说明:'中山-佛山-深圳高速通行费240.35' },
+  { 部门:'产品质量',二级对象:'产品质量',三级:'产品质量',费用类别:'汽车费用',金额:30.95,  费用说明:'中山-江门高速通行费30.95' },
+  { 部门:'产品质量',二级对象:'产品质量',三级:'产品质量',费用类别:'汽车费用',金额:39.78,  费用说明:'中山-江门高速通行费39.78' },
+  { 部门:'产品质量',二级对象:'产品质量',三级:'产品质量',费用类别:'汽车费用',金额:200,    费用说明:'公车加油费用200' },
+  { 部门:'产品质量',二级对象:'产品质量',三级:'产品质量',费用类别:'汽车费用',金额:233.4,  费用说明:'公车加油费用233.4' },
+  { 部门:'产品质量',二级对象:'产品质量',三级:'产品质量',费用类别:'汽车费用',金额:330.21, 费用说明:'公车加油费用330.21' },
+];
+
+const TEMPLATES = {
+  '202603': [
+    "中山-佛山-深圳高速通行费240.35","中山-佛山高速通行费45.6",
+    "中山-江门高速通行费30.95","中山-江门高速通行费39.78",
+    "公车加油费用200","公车加油费用233.4","公车加油费用330.21",
+  ],
+  '202605': [
+    "公车加油费用316.3","公车加油费用180.92","中山-佛山高速通行费51.92",
+    "公车加油费用181.13","公车加油费用200","中山-佛山高速通行费45.6",
+    "中山-佛山高速通行费51.92","中山-江门高速通行费30.95","公车加油费用200",
+  ],
+};
+
+let items = JSON.parse(JSON.stringify(DEFAULT_ITEMS));
+let scannedFolders = []; // 扫描结果暂存
+
+/* ──────────── 初始化 ──────────── */
+document.addEventListener('DOMContentLoaded', () => {
+  renderTable();
+  updateHeaderTotal();
+});
+
+/* ──────────── 标签页切换 ──────────── */
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  const btn = [...document.querySelectorAll('.tab-btn')].find(
+    b => b.textContent.includes(name === 'folder' ? '文件夹' : name === 'manual' ? '手动' : '文本')
+  );
+  if (btn) btn.classList.add('active');
+  document.getElementById(`tab-${name}`).classList.add('active');
+}
+
+/* ===========================================================
+   核心：文件夹拖拽 & 上传（v2 — 支持 pdf.js 解析发票金额）
+   =========================================================== */
+
+/* 拖拽进入 */
+function onDragOver(e) {
+  e.preventDefault(); e.stopPropagation();
+  e.currentTarget.classList.add('dragover');
+}
+
+/* 拖拽离开 */
+function onDragLeave(e) {
+  e.currentTarget.classList.remove('dragover');
+}
+
+/* 拖拽释放 —— 用 webkitGetAsEntry 遍历目录树 */
+function onDrop(e) {
+  e.preventDefault(); e.stopPropagation();
+  e.currentTarget.classList.remove('dragover');
+  document.getElementById('scanError').style.display = 'none';
+
+  const items = e.dataTransfer.items;
+  if (!items || items.length === 0) { showError('未检测到文件，请重试。'); return; }
+
+  const entries = [];
+  for (let i = 0; i < items.length; i++) {
+    const entry = items[i].webkitGetAsEntry ? items[i].webkitGetAsEntry() : null;
+    if (entry) entries.push(entry);
+  }
+
+  if (entries.length === 0) {
+    showError('浏览器不支持文件夹读取。请使用 Chrome / Edge 浏览器，或点击选择文件夹。');
+    return;
+  }
+
+  processEntries(entries);
+}
+
+/* 点击选择文件夹（webkitdirectory） */
+function onFolderSelected(e) {
+  document.getElementById('scanError').style.display = 'none';
+  const files = [...e.target.files];
+  if (files.length === 0) return;
+  const tree = buildTreeFromPaths(files);
+  renderScanResult(tree);
+  e.target.value = '';
+}
+
+/* 拖拽 entries → 构建 tree（含 File 对象） */
+async function processEntries(entries) {
+  showToast('正在扫描文件夹结构...');
+  const tree = [];
+  async function walk(entry, parentName, depth, firstLevelName) {
+    if (entry.isFile) {
+      const file = await new Promise(resolve => entry.file(resolve));
+      // depth<=0 → 顶层文件（无分组）；depth===1 → 一级子文件夹下文件；
+      // depth>=2 → 嵌套子文件夹文件，用一级文件夹名分组（与 webkitdirectory 行为一致）
+      const p = (depth <= 0) ? '' : (depth === 1) ? parentName : (firstLevelName || '');
+      tree.push({ name: entry.name, parent: p, file });
+    } else if (entry.isDirectory) {
+      const dirName = entry.name;
+      const reader = entry.createReader();
+      const allEntries = [];
+      let batch;
+      do {
+        batch = await new Promise(resolve => reader.readEntries(resolve));
+        allEntries.push(...batch);
+      } while (batch.length > 0);
+      allEntries.sort((a, b) => a.name.localeCompare(b.name));
+      const fl = (depth === 0) ? dirName : firstLevelName;
+      for (const child of allEntries) await walk(child, dirName, depth + 1, fl);
+    }
+  }
+  for (const entry of entries) await walk(entry, '', -1, '');
+  await renderScanResult(tree);
+}
+
+/* webkitRelativePath → tree（含 File 对象） */
+function buildTreeFromPaths(files) {
+  const tree = [];
+  for (const file of files) {
+    const path = file.webkitRelativePath || file.name;
+    const parts = path.split('/');
+    if (parts.length === 2) {
+      tree.push({ name: parts[1], parent: '', file });
+    } else if (parts.length >= 3) {
+      tree.push({ name: parts[parts.length - 1], parent: parts[1], file });
+    }
+  }
+  return tree;
+}
+
+/* ──────────── 异步解析 & 渲染扫描结果 ──────────── */
+async function renderScanResult(tree) {
+  const resultDiv = document.getElementById('scanResult');
+  const listDiv   = document.getElementById('scanFileList');
+
+  if (tree.length === 0) { showError('文件夹中没有检测到文件。'); return; }
+
+  // 显示解析进度
+  resultDiv.style.display = 'block';
+  listDiv.innerHTML = '<p style="text-align:center;padding:20px;">🔍 正在解析 PDF 发票内容... <span id="parse-progress">0/' + tree.length + '</span></p>';
+
+  // 分组：按父目录；每个条目存储 { name, file, parsedAmount, parsedCat }
+  const dirMap  = {};  // dirName -> [{name, file, amt, cat}]
+  const topList = [];  // [{name, file, amt, cat}]
+  let done = 0;
+  const total = tree.length;
+
+  for (const entry of tree) {
+    let amt = null, cat = null;
+    if (entry.file && entry.file.name.toLowerCase().endsWith('.pdf')) {
+      const r = await extractFromPDF(entry.file);
+      amt = r.amount; cat = r.category;
+    }
+    if (amt === null || amt === undefined) {
+      amt = extractFromName(entry.name);
+      cat = inferCategoryFromName(entry.name);
+    }
+    if (entry.parent) {
+      if (!dirMap[entry.parent]) dirMap[entry.parent] = [];
+      dirMap[entry.parent].push({ name: entry.name, amt, cat });
+    } else {
+      topList.push({ name: entry.name, amt, cat });
+    }
+    done++;
+    document.getElementById('parse-progress').textContent = done + '/' + total;
+  }
+
+  // 构建 HTML
+  const dirNames = Object.keys(dirMap);
+  let html = `<p style="font-size:13px;color:var(--text-sub);margin-bottom:8px;">
+    识别到 <strong>${dirNames.length}</strong> 个子文件夹 + <strong>${topList.length}</strong> 个直接 PDF → 共 <strong>${dirNames.length + topList.length}</strong> 条费用
+  </p>`;
+
+  for (const dn of dirNames) {
+    const pdfs = dirMap[dn];
+    const tot = pdfs.reduce((s, p) => s + (p.amt || 0), 0);
+    html += `<div class="dir-item">📁 ${dn}（共 ${pdfs.length} 张发票，合计 ¥${tot.toFixed(2)}）</div>`;
+    for (const p of pdfs) {
+      html += `<div class="file-item"><span>  📄 ${p.name}</span><span class="amt">¥${(p.amt || 0).toFixed(3)}</span></div>`;
+    }
+  }
+  if (topList.length > 0) {
+    const tt = topList.reduce((s, p) => s + (p.amt || 0), 0);
+    html += `<div class="dir-item">📄 直接 PDF（共 ${topList.length} 个，合计 ¥${tt.toFixed(2)}）</div>`;
+    for (const p of topList) {
+      html += `<div class="file-item"><span>  📄 ${p.name}</span><span class="amt">¥${(p.amt || 0).toFixed(3)}</span></div>`;
+    }
+  }
+
+  listDiv.innerHTML = html;
+  scannedFolders = { dirs: dirMap, tops: topList };
+  showToast(`扫描完成：共 ${dirNames.length + topList.length} 条费用`);
+}
+
+/* 扫描结果 → 表格条目 */
+function applyScannedData() {
+  if (!scannedFolders.dirs && !scannedFolders.tops) {
+    showToast('请先扫描文件夹', true); return;
+  }
+  const { dirs, tops } = scannedFolders;
+
+  function getSeq(name) { const m = name.match(/^(\d+)#/); return m ? parseInt(m[1], 10) : 9999; }
+  function toDecimal(n) { return Math.round(n * 100) / 100; }
+
+  const result = [];
+
+  // 子文件夹 → 每条汇总
+  for (const dn of Object.keys(dirs)) {
+    const pdfs = dirs[dn];
+    const total = toDecimal(pdfs.reduce((s, p) => s + (p.amt || 0), 0));
+    const mainCat = pdfs[0]?.cat || PDF_DEFAULT_CAT;
+    const dept = /质量|检验|QC|QA/i.test(dn) ? '质量部' : '产品质量';
+    result.push({
+      部门: dept, 二级对象: dept, 三级: dept,
+      费用类别: mainCat, 金额: total,
+      费用说明: dn,
+    });
+  }
+
+  // 根目录 PDF
+  for (const p of tops) {
+    const name = p.name.replace(/\.pdf$/i, '').trim();
+    const dept = /质量|检验|QC|QA/i.test(name) ? '质量部' : '产品质量';
+    result.push({
+      部门: dept, 二级对象: dept, 三级: dept,
+      费用类别: p.cat || PDF_DEFAULT_CAT, 金额: toDecimal(p.amt || 0),
+      费用说明: name,
+    });
+  }
+
+  result.sort((a, b) => getSeq(a['费用说明']) - getSeq(b['费用说明']));
+  items = result;
+  renderTable(); updateHeaderTotal();
+  switchTab('manual');
+  showToast(`已导入 ${result.length} 条费用到表格`);
+}
+
+/* ──────────── 错误提示 ──────────── */
+function showError(msg) {
+  const el = document.getElementById('scanError');
+  el.textContent = '⚠️ ' + msg;
+  el.style.display = 'block';
+}
+
+/* ===========================================================
+   表格渲染 & 操作
+   =========================================================== */
+function renderTable() {
+  const tbody = document.getElementById('table-body');
+  const tfoot = document.getElementById('table-foot');
+
+  items.forEach((item, idx) => { item['序号'] = idx + 1; });
+
+  let html = '';
+  items.forEach((item, idx) => {
+    html += `
+    <tr>
+      <td class="col-seq">${item['序号']}</td>
+      <td class="col-dept"><input value="${esc(item['部门'])}" onchange="updateItem(${idx},'部门',this.value)"/></td>
+      <td class="col-obj2"><input value="${esc(item['二级对象'])}" onchange="updateItem(${idx},'二级对象',this.value)"/></td>
+      <td class="col-obj3"><input value="${esc(item['三级'])}" onchange="updateItem(${idx},'三级',this.value)"/></td>
+      <td class="col-cat"><input value="${esc(item['费用类别'])}" onchange="updateItem(${idx},'费用类别',this.value)"/></td>
+      <td class="col-amt"><input type="number" step="0.01" value="${item['金额']}"
+        onchange="updateItem(${idx},'金额',parseFloat(this.value)||0)"
+        style="text-align:right;"/></td>
+      <td class="col-desc"><input value="${esc(item['费用说明'])}" onchange="updateItem(${idx},'费用说明',this.value)"/></td>
+      <td class="col-act"><button class="btn btn-danger btn-sm" onclick="deleteRow(${idx})" title="删除">✕</button></td>
+    </tr>`;
+  });
+  tbody.innerHTML = html;
+
+  const total = items.reduce((s, i) => s + (parseFloat(i['金额']) || 0), 0);
+  tfoot.innerHTML = `
+    <tr class="total-row">
+      <td></td><td></td><td></td><td></td>
+      <td><strong>合计</strong></td>
+      <td style="text-align:right;"><strong>${total.toFixed(2)}</strong></td>
+      <td></td><td></td>
+    </tr>`;
+
+  updateHeaderTotal();
+}
+
+function updateHeaderTotal() {
+  const total = items.reduce((s, i) => s + (parseFloat(i['金额']) || 0), 0);
+  document.getElementById('header-total').textContent =
+    items.length > 0 ? `合计 ¥${total.toFixed(2)}（${items.length}条）` : '';
+}
+
+function esc(str) { return String(str).replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+
+function updateItem(idx, field, value) {
+  if (items[idx]) {
+    items[idx][field] = value;
+    if (field === '金额' || field === '费用说明' || field === '部门') renderTable();
+    else updateHeaderTotal();
+  }
+}
+
+function addRow() {
+  items.push({ 部门:'产品质量', 二级对象:'产品质量', 三级:'产品质量', 费用类别:'汽车费用', 金额:0, 费用说明:'' });
+  renderTable();
+  showToast('已添加新行');
+}
+
+function deleteRow(idx) {
+  if (items.length <= 1) { showToast('至少保留一行', true); return; }
+  items.splice(idx, 1);
+  renderTable();
+}
+
+function clearAll() {
+  if (!confirm('确定清空所有数据吗？')) return;
+  items = [];
+  renderTable();
+  showToast('表格已清空');
+}
+
+/* ===========================================================
+   文本粘贴解析
+   =========================================================== */
+function parseText(text) {
+  const lines = text.split(/[\n\r]+/).filter(l => l.trim());
+  const result = [];
+  for (const line of lines) {
+    let cleaned = line.trim().replace(/^(📁|\[DIR\]|[├└│─\s]+)\s*/, '');
+    if (!cleaned) continue;
+    let name = cleaned.replace(/\.pdf$/i, '').trim();
+    if (!name) continue;
+    // 取最后一个数字（金额在序号之后）
+    const nums = name.match(/\d+(?:\.\d+)?/g);
+    const amount = nums ? parseFloat(nums[nums.length - 1]) : 0;
+    const dept = /质量|检验|QC|QA/i.test(name) ? '质量部' : '产品质量';
+    result.push({ 部门:dept, 二级对象:dept, 三级:dept, 费用类别:'汽车费用', 金额:amount, 费用说明:name });
+  }
+  return result;
+}
+
+function previewParse() {
+  const text = document.getElementById('parse-input').value;
+  const preview = document.getElementById('parse-preview');
+  if (!text.trim()) { preview.style.display = 'none'; return; }
+  const parsed = parseText(text);
+  if (parsed.length === 0) { preview.style.display = 'none'; return; }
+  preview.style.display = 'block';
+  preview.innerHTML = `<strong>📋 预览（共 ${parsed.length} 条）：</strong>
+    <table style="width:100%;font-size:12px;margin-top:6px;">
+    <tr><th>#</th><th>部门</th><th>类别</th><th>金额</th><th>说明</th></tr>
+    ${parsed.map((p,i)=>`<tr><td>${i+1}</td><td>${p['部门']}</td><td>${p['费用类别']}</td>
+    <td style="text-align:right">${p['金额']}</td><td>${p['费用说明']}</td></tr>`).join('')}</table>`;
+}
+
+function parseAndImport() {
+  const text = document.getElementById('parse-input').value;
+  if (!text.trim()) { showToast('请先粘贴内容', true); return; }
+  const parsed = parseText(text);
+  if (parsed.length === 0) { showToast('未解析到有效数据', true); return; }
+  items = parsed;
+  renderTable();
+  switchTab('manual');
+  showToast(`已导入 ${parsed.length} 条费用`);
+}
+
+function clearParse() {
+  document.getElementById('parse-input').value = '';
+  document.getElementById('parse-preview').style.display = 'none';
+}
+
+function loadTemplate(name) {
+  const lines = TEMPLATES[name];
+  if (!lines) return;
+  document.getElementById('parse-input').value = lines.join('\n');
+  previewParse();
+  showToast(`已加载模板：${name}`);
+}
+
+/* ===========================================================
+   下载 Excel（ExcelJS 完整样式）
+   =========================================================== */
+async function downloadExcel() {
+  if (items.length === 0) { showToast('表格为空，请先添加数据', true); return; }
+
+  try {
+    showToast('正在生成 Excel...');
+    const workbook = new ExcelJS.Workbook();
+    const ws = workbook.addWorksheet('Sheet1');
+    const headers = ['★序号','费用承担部门','二级对象（店铺）','三级（asin或其他）','费用类别','金额','费用说明'];
+
+    ws.columns = [{width:9},{width:17.3},{width:16},{width:18},{width:11},{width:9},{width:40}];
+
+    // 表头
+    const hr = ws.addRow(headers);
+    hr.height = 31;
+    hr.eachCell(c => {
+      c.font={name:'微软雅黑',size:10,color:{argb:'FF000000'}};
+      c.fill={type:'pattern',pattern:'solid',fgColor:{argb:'FFFFFFFF'}};
+      c.alignment={horizontal:'center',vertical:'middle',wrapText:true};
+      c.border={top:{style:'thin',color:{argb:'FF000000'}},left:{style:'thin',color:{argb:'FF000000'}},bottom:{style:'thin',color:{argb:'FF000000'}},right:{style:'thin',color:{argb:'FF000000'}}};
+    });
+
+    // 数据行
+    items.forEach((it, i) => {
+      const r = ws.addRow([i+1,it['部门'],it['二级对象'],it['三级'],it['费用类别'],parseFloat(it['金额'])||0,it['费用说明']]);
+      r.height=18;
+      r.eachCell(c=>{
+        c.font={name:'微软雅黑',size:10,color:{argb:'FF000000'}};
+        c.alignment={horizontal:'center',vertical:'middle',wrapText:true};
+        c.border={top:{style:'thin',color:{argb:'FF000000'}},left:{style:'thin',color:{argb:'FF000000'}},bottom:{style:'thin',color:{argb:'FF000000'}},right:{style:'thin',color:{argb:'FF000000'}}};
+      });
+    });
+
+    // 合计行
+    const tot = items.reduce((s,i)=>s+(parseFloat(i['金额'])||0),0);
+    const tr = ws.addRow(['','','','','合计',Math.round(tot*100)/100,'']);
+    tr.height=18;
+    tr.eachCell((c,ci)=>{
+      c.font={name:'微软雅黑',size:10,bold:(ci===5||ci===6),color:{argb:'FF000000'}};
+      c.alignment={horizontal:'center',vertical:'middle',wrapText:true};
+      c.border={top:{style:'thin',color:{argb:'FF000000'}},left:{style:'thin',color:{argb:'FF000000'}},bottom:{style:'thin',color:{argb:'FF000000'}},right:{style:'thin',color:{argb:'FF000000'}}};
+    });
+
+    const buf = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href=url; a.download='费用报销表_生成.xlsx';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast(`Excel 已下载：${items.length} 条，合计 ¥${tot.toFixed(2)}`);
+  } catch(err) {
+    console.error(err);
+    showToast('生成失败：'+err.message, true);
+  }
+}
+
+/* ──────────── Toast ──────────── */
+function showToast(msg, isErr) {
+  const c = document.getElementById('toast-container');
+  const t = document.createElement('div');
+  t.className='toast'+(isErr?' error':'');
+  t.textContent=msg; c.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';t.style.transition='opacity 0.3s';},2500);
+  setTimeout(()=>t.remove(),3000);
+}
+</script>
+</body>
+</html>
