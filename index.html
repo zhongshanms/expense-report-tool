@@ -201,7 +201,7 @@ td input:focus { background: #e6f7ff; border-radius: 4px; }
   <!-- ── 标签页 ── -->
   <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('guide')">📖 工具使用说明</button>
-    <button class="tab-btn" onclick="switchTab('folder')">📂 文件夹导入</button>
+    <button class="tab-btn" onclick="switchTab('folder')">📁 上传文件</button>
     <button class="tab-btn" onclick="switchTab('manual')">✏️ 编辑确认</button>
   </div>
 
@@ -414,7 +414,7 @@ function switchTab(name) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   const btn = [...document.querySelectorAll('.tab-btn')].find(
-    b => b.textContent.includes(name === 'guide' ? '说明' : name === 'folder' ? '文件夹' : '编辑')
+    b => b.textContent.includes(name === 'guide' ? '说明' : name === 'folder' ? '上传' : '编辑')
   );
   if (btn) btn.classList.add('active');
   document.getElementById(`tab-${name}`).classList.add('active');
