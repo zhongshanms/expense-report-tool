@@ -146,24 +146,6 @@ td input:focus { background: #e6f7ff; border-radius: 4px; }
 .col-desc{min-width:200px}.col-act{width:60px}
 .total-row td { font-weight: 700; background: #fafafa; }
 
-/* ==================== 批量导入 ==================== */
-.form-group { display:flex; flex-direction:column; gap:4px; margin-bottom: 10px; }
-.form-group label { font-size:13px; font-weight:600; color:var(--text-sub); }
-.form-group textarea {
-  padding: 8px 12px; border: 1px solid var(--border);
-  border-radius: 6px; font-size: 14px; font-family: inherit;
-  transition: border 0.2s; outline: none; resize: vertical; min-height: 120px;
-}
-.form-group textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(24,144,255,0.15); }
-
-.parse-preview {
-  background: #f9f9f9; border: 1px solid var(--border);
-  border-radius: 6px; padding: 12px; margin-top: 8px;
-  font-size: 13px; max-height: 200px; overflow-y: auto; display: none;
-}
-
-.hint { font-size: 12px; color: #999; margin-top: 4px; }
-
 /* ==================== Toast ==================== */
 .toast {
   position: fixed; top: 20px; right: 20px;
@@ -220,7 +202,6 @@ td input:focus { background: #e6f7ff; border-radius: 4px; }
   <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('folder')">📂 文件夹导入</button>
     <button class="tab-btn" onclick="switchTab('manual')">✏️ 手动编辑</button>
-    <button class="tab-btn" onclick="switchTab('parse')">📋 文本粘贴</button>
   </div>
 
   <!-- ═══════════════ 标签1: 文件夹导入 ═══════════════ -->
@@ -283,31 +264,6 @@ td input:focus { background: #e6f7ff; border-radius: 4px; }
           <tbody id="table-body"></tbody>
           <tfoot id="table-foot"></tfoot>
         </table>
-      </div>
-    </div>
-  </div>
-
-  <!-- ═══════════════ 标签3: 文本粘贴 ═══════════════ -->
-  <div id="tab-parse" class="tab-panel">
-    <div class="card">
-      <div class="card-title">📋 粘贴文件夹结构文本</div>
-      <div class="form-group">
-        <label>每行一个费用项目（可含文件夹名称或 PDF 文件名）</label>
-        <textarea id="parse-input" placeholder="粘贴示例：&#10;中山-佛山高速通行费45.6&#10;公车加油费用200&#10;中山-江门高速通行费30.95&#10;..." oninput="previewParse()"></textarea>
-      </div>
-      <div class="parse-preview" id="parse-preview"></div>
-      <div style="margin-top:10px; display:flex; gap:8px;">
-        <button class="btn btn-primary" onclick="parseAndImport()">📥 导入表格</button>
-        <button class="btn btn-outline" onclick="clearParse()">清空</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">⚡ 快速模板</div>
-      <p class="hint" style="margin-bottom:8px;">选择模板后点击「导入表格」</p>
-      <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <button class="btn btn-outline btn-sm" onclick="loadTemplate('202603')">202603中山（7条）</button>
-        <button class="btn btn-outline btn-sm" onclick="loadTemplate('202605')">202605中山（9条）</button>
       </div>
     </div>
   </div>
@@ -411,20 +367,6 @@ function inferCategoryFromName(name) {
 let items = [];
 let scannedFolders = []; // 扫描结果暂存
 
-/* 快速模板数据 */
-const TEMPLATES = {
-  '202603': [
-    "中山-佛山-深圳高速通行费240.35","中山-佛山高速通行费45.6",
-    "中山-江门高速通行费30.95","中山-江门高速通行费39.78",
-    "公车加油费用200","公车加油费用233.4","公车加油费用330.21",
-  ],
-  '202605': [
-    "公车加油费用316.3","公车加油费用180.92","中山-佛山高速通行费51.92",
-    "公车加油费用181.13","公车加油费用200","中山-佛山高速通行费45.6",
-    "中山-佛山高速通行费51.92","中山-江门高速通行费30.95","公车加油费用200",
-  ],
-};
-
 /* ──────────── 初始化 ──────────── */
 document.addEventListener('DOMContentLoaded', () => {
   renderTable();
@@ -436,7 +378,7 @@ function switchTab(name) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   const btn = [...document.querySelectorAll('.tab-btn')].find(
-    b => b.textContent.includes(name === 'folder' ? '文件夹' : name === 'manual' ? '手动' : '文本')
+    b => b.textContent.includes(name === 'folder' ? '文件夹' : '手动')
   );
   if (btn) btn.classList.add('active');
   document.getElementById(`tab-${name}`).classList.add('active');
@@ -719,64 +661,6 @@ function clearAll() {
   items = [];
   renderTable();
   showToast('表格已清空');
-}
-
-/* ===========================================================
-   文本粘贴解析
-   =========================================================== */
-function parseText(text) {
-  const lines = text.split(/[\n\r]+/).filter(l => l.trim());
-  const result = [];
-  for (const line of lines) {
-    let cleaned = line.trim().replace(/^(📁|\[DIR\]|[├└│─\s]+)\s*/, '');
-    if (!cleaned) continue;
-    let name = cleaned.replace(/\.pdf$/i, '').trim();
-    if (!name) continue;
-    // 取最后一个数字（金额在序号之后）
-    const nums = name.match(/\d+(?:\.\d+)?/g);
-    const amount = nums ? parseFloat(nums[nums.length - 1]) : 0;
-    const dept = /质量|检验|QC|QA/i.test(name) ? '质量部' : '产品质量';
-    result.push({ 部门:dept, 二级对象:dept, 三级:dept, 费用类别:'汽车费用', 金额:amount, 费用说明:name });
-  }
-  return result;
-}
-
-function previewParse() {
-  const text = document.getElementById('parse-input').value;
-  const preview = document.getElementById('parse-preview');
-  if (!text.trim()) { preview.style.display = 'none'; return; }
-  const parsed = parseText(text);
-  if (parsed.length === 0) { preview.style.display = 'none'; return; }
-  preview.style.display = 'block';
-  preview.innerHTML = `<strong>📋 预览（共 ${parsed.length} 条）：</strong>
-    <table style="width:100%;font-size:12px;margin-top:6px;">
-    <tr><th>#</th><th>部门</th><th>类别</th><th>金额</th><th>说明</th></tr>
-    ${parsed.map((p,i)=>`<tr><td>${i+1}</td><td>${p['部门']}</td><td>${p['费用类别']}</td>
-    <td style="text-align:right">${p['金额']}</td><td>${p['费用说明']}</td></tr>`).join('')}</table>`;
-}
-
-function parseAndImport() {
-  const text = document.getElementById('parse-input').value;
-  if (!text.trim()) { showToast('请先粘贴内容', true); return; }
-  const parsed = parseText(text);
-  if (parsed.length === 0) { showToast('未解析到有效数据', true); return; }
-  items = parsed;
-  renderTable();
-  switchTab('manual');
-  showToast(`已导入 ${parsed.length} 条费用`);
-}
-
-function clearParse() {
-  document.getElementById('parse-input').value = '';
-  document.getElementById('parse-preview').style.display = 'none';
-}
-
-function loadTemplate(name) {
-  const lines = TEMPLATES[name];
-  if (!lines) return;
-  document.getElementById('parse-input').value = lines.join('\n');
-  previewParse();
-  showToast(`已加载模板：${name}`);
 }
 
 /* ===========================================================
